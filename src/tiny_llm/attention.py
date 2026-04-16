@@ -26,7 +26,13 @@ class SimpleMultiHeadAttention:
         wv: mx.array,
         wo: mx.array,
     ):
-        pass
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.head_dim = hidden_size // num_heads
+        self.wq = wq
+        self.wk = wk
+        self.wv = wv
+        self.wo = wo
 
     def __call__(
         self,
@@ -35,7 +41,19 @@ class SimpleMultiHeadAttention:
         value: mx.array,
         mask: mx.array | None = None,
     ) -> mx.array:
-        pass
+        N, L, _ = query.shape
+        q = linear(query, self.wq)
+        k = linear(key, self.wk)
+        v = linear(value, self.wv)
+
+        q = q.reshape(N, L, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
+        k = k.reshape(N, L, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
+        v = v.reshape(N, L, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
+
+        x = scaled_dot_product_attention_simple(q, k, v, mask=mask)
+        x = x.transpose(0, 2, 1, 3).reshape(N, L, self.hidden_size)
+        return linear(x, self.wo)
+
 
 
 def causal_mask(L: int, S: int, dtype: mx.Dtype) -> mx.array:
