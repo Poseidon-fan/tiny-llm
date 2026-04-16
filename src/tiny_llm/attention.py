@@ -57,7 +57,10 @@ class SimpleMultiHeadAttention:
 
 
 def causal_mask(L: int, S: int, dtype: mx.Dtype) -> mx.array:
-    pass
+    mask = mx.tril(mx.ones((L, S)), k=(S - L))
+    mask = mx.where(mask, 0, -mx.inf)
+    return mask.astype(dtype)
+
 
 
 def scaled_dot_product_attention_grouped(
@@ -67,7 +70,26 @@ def scaled_dot_product_attention_grouped(
     scale: float | None = None,
     mask: mx.array | str | None = None,
 ) -> mx.array:
-    pass
+    H_q, L, D = query.shape[-3:]
+    H, S, _ = key.shape[-3:]
+    B = query.shape[:-3]
+    n_repeats = H_q // H
+    
+    query = query.reshape(*B, H, n_repeats, L, D)
+
+    key   = key.reshape(*B, H, 1, S, D)
+    value = value.reshape(*B, H, 1, S, D)
+
+    factor = mx.rsqrt(D) if scale is None else scale
+    scores = mx.matmul(query, key.swapaxes(-2, -1)) * factor
+    if mask is not None:
+        if mask == "causal":
+            mask = causal_mask(L, S, scores.dtype)
+        else:
+            mask = mask.reshape(*B, H, n_repeats, L, S)
+        scores = scores + mask
+    result = mx.matmul(softmax(scores, axis=-1), value)
+    return result.reshape(*B, H_q, L, D)
 
 
 def flash_attention(
